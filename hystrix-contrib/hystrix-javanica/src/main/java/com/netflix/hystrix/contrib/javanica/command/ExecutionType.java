@@ -27,22 +27,31 @@ public enum ExecutionType {
     /**
      * Used for asynchronous execution of command.
      */
+    // 异步， 命令的返回值为 Future，可使用 Future#get 方法 阻塞式 获取执行结果
     ASYNCHRONOUS,
 
     /**
      * Used for synchronous execution of command.
      */
+    // 同步
     SYNCHRONOUS,
 
     /**
      * Reactive execution (asynchronous callback).
      */
+    // 响应式（异步回调），可获取【发射执行结果】的 Observable，进行【订阅】，订阅对应的异步回调方法
     OBSERVABLE;
 
     /**
      * Gets execution type for specified class type.
      * @param type the type
      * @return the execution type {@link ExecutionType}
+     */
+    /**
+     * 命令的类型取决于切点方法的返回值
+     * Future -> ASYNCHRONOUS
+     * Observable -> OBSERVABLE
+     * 其他 -> SYNCHRONOUS
      */
     public static ExecutionType getExecutionType(Class<?> type) {
         if (Future.class.isAssignableFrom(type)) {

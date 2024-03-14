@@ -61,6 +61,27 @@ import static com.netflix.hystrix.contrib.javanica.utils.ajc.AjcUtils.getAjcMeth
 
 /**
  * AspectJ aspect to process methods which annotated with {@link HystrixCommand} annotation.
+ * 和CommandKey
+ * 1、GroupKey
+ * 是唯一必填项
+ * 可以作为分组监控和报警作用
+ * 将作为线程池的默认名称
+ * 2、CommandKey
+ * 可以不填写CommandKey
+ * 默认Hystrix会通过反射类名命名CommandKey
+ * 3、缓存
+ * 覆盖重写getCacheKey方法
+ * 请求缓存必须在同一个请求的上下文中
+ * 开启请求缓存开关，hystrix默认是开启的
+ * 4、hystrix请求合并
+ * Hystrix支持将多个请求合并成一次请求
+ * Hystrix请求合并要求两次请求必须足够“近”
+ * 请求合并分为局部合并和全局合并两种
+ * 通过Collapser可以设置相关参数
+ * https://blog.csdn.net/weixin_45399489?type=blog
+ * https://blog.csdn.net/qq_36944952/article/details/136070831?spm=1001.2101.3001.6650.1&utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-1-136070831-blog-126993513.235%5Ev43%5Epc_blog_bottom_relevance_base3&depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-1-136070831-blog-126993513.235%5Ev43%5Epc_blog_bottom_relevance_base3&utm_relevant_index=2
+ * https://blog.csdn.net/AllenChan_/article/details/126508680
+ *
  */
 @Aspect
 public class HystrixCommandAspect {
@@ -90,14 +111,14 @@ public class HystrixCommandAspect {
         //获取原始目标方法
         Method method = getMethodFromTarget(joinPoint);
         Validate.notNull(method, "failed to get method from joinPoint: %s", joinPoint);
-        //只处理这两种注解标注的方法
+        // 不能同时注解 @HystrixCommand 和 @HystrixCollapser
         if (method.isAnnotationPresent(HystrixCommand.class) && method.isAnnotationPresent(HystrixCollapser.class)) {
             throw new IllegalStateException("method cannot be annotated with HystrixCommand and HystrixCollapser " +
                     "annotations at the same time");
         }
-        //获取MetaHolderFactory不同实现的factory
+        // 获取注解对应 MetaHolderFactory
         MetaHolderFactory metaHolderFactory = META_HOLDER_FACTORY_MAP.get(HystrixPointcutType.of(method));
-        //获取封装方法的元数据（元数据指的是比如方法的签名，方法上加的注解信息，参数，注解上配置回退方法这些都属于元数据）封装成一个MetaHolder
+        // 获取封装方法的元数据（元数据指的是比如方法的签名，方法上加的注解信息，参数，注解上配置回退方法这些都属于元数据）封装成一个MetaHolder
         MetaHolder metaHolder = metaHolderFactory.create(joinPoint);
         /**
          * 创建处理器CommandCollapser 或 GenericCommand （同步） 或GenericObservableCommand（异步）
@@ -107,6 +128,8 @@ public class HystrixCommandAspect {
          * HystrixCommand最终到了AbstractCommand  一路传递
          * 一会在AbstractCommand中分析下
          */
+        // 构建对应的 HystrixInvokable（命令）
+        // 可以理解为，Hystrix 对所有注解了 @HystrixCommand 和 @HystrixCollapser 的方法进行代理，将其行为委托给基于切点方法构造的 HystrixInvokable
         HystrixInvokable invokable = HystrixCommandFactory.getInstance().create(metaHolder);
         //根据返回值推断执行类型
         ExecutionType executionType = metaHolder.isCollapserAnnotationPresent() ?
@@ -353,6 +376,7 @@ public class HystrixCommandAspect {
         return builder;
     }
 
+    //设置降级方法
     private static MetaHolder.Builder setFallbackMethod(MetaHolder.Builder builder, Class<?> declaringClass, Method commandMethod) {
         FallbackMethod fallbackMethod = MethodProvider.getInstance().getFallbackMethod(declaringClass, commandMethod);
         if (fallbackMethod.isPresent()) {

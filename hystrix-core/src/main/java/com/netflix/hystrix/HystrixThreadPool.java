@@ -103,6 +103,9 @@ public interface HystrixThreadPool {
          *
          * @return {@link HystrixThreadPool} instance
          */
+        /**
+         * 从map中获取线程池，如果不存在则构造一个线程池对象存入
+         */
         /* package */static HystrixThreadPool getInstance(HystrixThreadPoolKey threadPoolKey, HystrixThreadPoolProperties.Setter propertiesBuilder) {
             // get the key to use instead of using the object itself so that if people forget to implement equals/hashcode things will still work
             String key = threadPoolKey.name();
@@ -114,8 +117,10 @@ public interface HystrixThreadPool {
             }
 
             // if we get here this is the first time so we need to initialize
+            // 加锁 保证单机并发的安全性
             synchronized (HystrixThreadPool.class) {
                 if (!threadPools.containsKey(key)) {
+                    //通过HystrixThreadPoolDefault类来构造线程池
                     threadPools.put(key, new HystrixThreadPoolDefault(threadPoolKey, propertiesBuilder));
                 }
             }

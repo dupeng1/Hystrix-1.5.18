@@ -299,6 +299,7 @@ public abstract class HystrixCommand<R> extends AbstractCommand<R> implements Hy
             @Override
             public Observable<R> call() {
                 try {
+                    // 线程执行用户提交的任务，子类run()
                     return Observable.just(run());
                 } catch (Throwable ex) {
                     return Observable.error(ex);
@@ -339,7 +340,7 @@ public abstract class HystrixCommand<R> extends AbstractCommand<R> implements Hy
      * @throws IllegalStateException
      *             if invoked more than once
      */
-    //同步执行
+    //调用后直接 block 住，属于同步调用，直到依赖服务返回单条结果，或者抛出异常
     public R execute() {
         try {
             //通过queue().get()来同步执行
@@ -371,7 +372,7 @@ public abstract class HystrixCommand<R> extends AbstractCommand<R> implements Hy
      * @throws IllegalStateException
      *             if invoked more than once
      */
-    //异步执行，什么时候get()，由调用者决定，get()的时候会阻塞
+    //返回一个 Future，属于异步调用，后面可以通过 Future 获取单条结果，什么时候get()，由调用者决定，get()的时候会阻塞
     public Future<R> queue() {
         /*
          * The Future returned by Observable.toBlocking().toFuture() does not implement the

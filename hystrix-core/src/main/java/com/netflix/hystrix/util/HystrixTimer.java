@@ -88,9 +88,10 @@ public class HystrixTimer {
      * @return reference to the TimerListener that allows cleanup via the <code>clear()</code> method
      */
     public Reference<TimerListener> addTimerListener(final TimerListener listener) {
+        // 初始化HystrixTimer中的计划线程池
         startThreadIfNeeded();
         // add the listener
-
+        // 驱动超时标记的Job
         Runnable r = new Runnable() {
 
             @Override
@@ -102,7 +103,7 @@ public class HystrixTimer {
                 }
             }
         };
-
+        // 提交给计划线程池调度，执行时间间隔是HystrixCommand的timeout，周期执行
         ScheduledFuture<?> f = executor.get().getThreadPool().scheduleAtFixedRate(r, listener.getIntervalTimeInMilliseconds(), listener.getIntervalTimeInMilliseconds(), TimeUnit.MILLISECONDS);
         return new TimerReference(listener, f);
     }

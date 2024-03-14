@@ -26,6 +26,13 @@ import com.netflix.hystrix.HystrixCommandMetrics.HealthCounts;
  * <p>
  * It will then allow single retries after a defined sleepWindow until the execution succeeds at which point it will again close the circuit and allow executions again.
  */
+
+/**
+ * Hystrix 使用断路器，对请求失败达到 阈值 的服务，打开 断路器，断路器有如下状态：
+ * 1、闭合，正常发送请求，当请求失败达到 阈值 后，断开
+ * 2、断开，此时不进行服务调用，直接返回失败（或者降级处理），并设置一个 重置时间，在该时间后，断路器半开
+ * 3、半开，允许发送请求，在调用成功达到一定条件后关闭断路器，否则再次打开
+ */
 public interface HystrixCircuitBreaker {
 
     /**
@@ -35,6 +42,7 @@ public interface HystrixCircuitBreaker {
      * 
      * @return boolean whether a request should be permitted
      */
+    // 是否允许请求发送
     public boolean allowRequest();
 
     /**
@@ -42,11 +50,13 @@ public interface HystrixCircuitBreaker {
      * 
      * @return boolean state of circuit breaker
      */
+    // 断路器是否打开
     public boolean isOpen();
 
     /**
      * Invoked on successful executions from {@link HystrixCommand} as part of feedback mechanism when in a half-open state.
      */
+    // 断路器半开时关闭
     /* package */void markSuccess();
 
     /**
@@ -126,13 +136,17 @@ public interface HystrixCircuitBreaker {
     //断路器实现
     /* package */static class HystrixCircuitBreakerImpl implements HystrixCircuitBreaker {
         //hystrix 的配置都在HystrixCommandProperties
+        // HystrixCommand 配置
         private final HystrixCommandProperties properties;
+        // HystrixCommand 监控指标
         private final HystrixCommandMetrics metrics;
 
         /* track whether this circuit is open/closed at any given point in time (default to false==closed) */
+        // 断路器开关
         private AtomicBoolean circuitOpen = new AtomicBoolean(false);
 
         /* when the circuit was marked open or was last allowed to try a 'singleTest' */
+        // 断路器打开时间
         private AtomicLong circuitOpenedOrLastTestedTime = new AtomicLong();
 
         protected HystrixCircuitBreakerImpl(HystrixCommandKey key, HystrixCommandGroupKey commandGroup, HystrixCommandProperties properties, HystrixCommandMetrics metrics) {
@@ -140,6 +154,7 @@ public interface HystrixCircuitBreaker {
             this.metrics = metrics;
         }
 
+        // 半开状态下关闭断路器，即对 开关 进行 CAS 关闭操作
         public void markSuccess() {
             if (circuitOpen.get()) {
                 if (circuitOpen.compareAndSet(true, false)) {
@@ -151,14 +166,20 @@ public interface HystrixCircuitBreaker {
             }
         }
 
+        //是否允许请求，取决于 断路器 状态
         @Override
         public boolean allowRequest() {
+            //如果配置强制打开断路器，返回 false
             if (properties.circuitBreakerForceOpen().get()) {
                 // properties have asked us to force the circuit open so we will allow NO requests
                 //强制打开断路器，就直接返回，这个时候就熔断了
                 return false;
             }
-            //断路器关闭的情况下，再次验证
+            /**
+             * 如果配置强制关闭断路器，返回 true，但会执行 isOpen 方法
+             *      以保证强制关闭接触后，断路器状态仍然正确
+             *      （失效服务的断路器是开启的）
+             */
             if (properties.circuitBreakerForceClosed().get()) {
                 // we still want to allow isOpen() to perform it's calculations so we simulate normal behavior
                 isOpen();
@@ -166,9 +187,16 @@ public interface HystrixCircuitBreaker {
                 //不管本次什么样的结果，至少我进来的是开着的，设置为关闭以后，我还得继续执行
                 return true;
             }
+            /**
+             * 如果断路器关闭，返回 true
+             * 如果断路器打开，则执行 allowSingleTest，判断是否超过重置时间，如果是则半开
+             */
             return !isOpen() || allowSingleTest();
         }
 
+        /**
+         * 如果断开超过设置的 重置时间，则半开
+         */
         public boolean allowSingleTest() {
             long timeCircuitOpenedOrWasLastTested = circuitOpenedOrLastTestedTime.get();
             // 1) if the circuit is open
@@ -185,6 +213,7 @@ public interface HystrixCircuitBreaker {
             return false;
         }
 
+        //如果 断路器 打开，直接返回 true，如果是关闭的，则根据其服务指标，决定是否打开断路器
         @Override
         public boolean isOpen() {
             //如果是open的，拦截，直接返回true
@@ -213,7 +242,12 @@ public interface HystrixCircuitBreaker {
                 return false;
             } else {
                 // our failure rate is too high, trip the circuit
-                // 异常比率较高，就设置断路器为open
+                /**
+                 * 失败请求达到阈值，打开断路器并更新打开时间
+                 *      此处是 CAS 操作，如果竞争失败，其实
+                 *      并不影响结果（断路器打开了，时间设置了）
+                 *      因此直接返回 true 即可
+                 */
                 if (circuitOpen.compareAndSet(false, true)) {
                     // if the previousValue was false then we want to set the currentTime
                     // 设置断路器器打开的时间
@@ -236,6 +270,7 @@ public interface HystrixCircuitBreaker {
      * 
      * @ExcludeFromJavadoc
      */
+    //空实现，默认可以发送请求
     /* package */static class NoOpCircuitBreaker implements HystrixCircuitBreaker {
 
         @Override
